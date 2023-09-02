@@ -29,13 +29,12 @@ impl Engine {
     const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     const BLACK: [f32; 4] = [0.2, 0.2, 0.2, 1.0];
     const GREEN: [f32; 4] = [0.0, 1.0, 0.0, 1.0];
-    const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
-    const WIDTH: u32 = 1080;
-    const HEIGHT: u32 = 600;
+    const WIDTH: u32 = 1920;
+    const HEIGHT: u32 = 1080;
 
     pub fn new() -> Engine {
         let opengl = OpenGL::V3_2;
-        let window: Window = WindowSettings::new("uaquax", [Self::WIDTH, Self::HEIGHT])
+        let window: Window = WindowSettings::new("U3D Engine", [Self::WIDTH, Self::HEIGHT])
             .graphics_api(opengl)
             .exit_on_esc(true)
             .build()
@@ -95,6 +94,12 @@ impl Engine {
     }
 
     pub fn render(&mut self, args: &RenderArgs) {
+        let mini_map_size = 200.0;
+
+        let map_scale = mini_map_size / Self::WIDTH as f64;
+
+        let mini_map_x = 10.0;
+        let mini_map_y = 10.0;
         let cell_width = args.window_size[0] as f64 / self.map.size[0] as f64;
         let cell_height = args.window_size[1] as f64 / self.map.size[1] as f64;
 
@@ -106,10 +111,10 @@ impl Engine {
                 for x in 0..self.map.size[0] {
                     let index = (y * self.map.size[0] + x) as usize;
                     if self.map.map[index] == 1 {
-                        let rect_x = x as f64 * cell_width;
-                        let rect_y = y as f64 * cell_height;
-                        let rect_width = cell_width;
-                        let rect_height = cell_height;
+                        let rect_x = x as f64 * cell_width * map_scale + mini_map_x;
+                        let rect_y = y as f64 * cell_height * map_scale + mini_map_y;
+                        let rect_width = cell_width * map_scale;
+                        let rect_height = cell_height * map_scale;
 
                         rectangle(
                             Self::WHITE,
@@ -122,32 +127,34 @@ impl Engine {
             }
 
             /* ---- PLAYER ---- */
-            let square = rectangle::square(0.0, 0.0, Player::SIZE);
-            let rotation = c
-                .transform
-                .trans(
-                    self.player.position.x + Player::SIZE / 2.0,
-                    self.player.position.y + Player::SIZE / 2.0,
-                )
-                .rot_rad(self.player.angle)
-                .trans(-Player::SIZE / 2.0, -Player::SIZE / 2.0);
+            let mini_player_size = Player::SIZE * map_scale;
 
-            // let line_start_x = self.player.position.x + Player::SIZE / 2.0;
-            // let line_start_y = self.player.position.y + Player::SIZE / 2.0;
-            // let line_end_x = line_start_x + self.player.delta.x * 20.0;
-            // let line_end_y = line_start_y + self.player.delta.y * 20.0;
-            // line(
-            //     Self::RED,
-            //     2.0,
-            //     [line_start_x, line_start_y, line_end_x, line_end_y],
-            //     c.transform,
-            //     gl,
-            // );
+            if self.player.position.x >= 0.0
+                && self.player.position.x <= Self::WIDTH as f64
+                && self.player.position.y >= 0.0
+                && self.player.position.y <= Self::HEIGHT as f64
+            {
+                let player_x = self.player.position.x / self.map.size[0] as f64 * mini_map_size
+                    + mini_map_x
+                    - mini_player_size / 2.0;
+                let player_y = self.player.position.y / self.map.size[1] as f64 * mini_map_size
+                    + mini_map_y
+                    - mini_player_size / 2.0;
+                let square = rectangle::square(0.0, 0.0, mini_player_size);
+                let rotation = c
+                    .transform
+                    .trans(
+                        player_x + mini_player_size / 2.0,
+                        player_y + mini_player_size / 2.0,
+                    )
+                    .rot_rad(self.player.angle)
+                    .trans(-mini_player_size / 2.0, -mini_player_size / 2.0);
 
-            rectangle(Self::GREEN, square, rotation, gl);
+                rectangle(Self::GREEN, square, rotation, gl);
+            }
 
             /* ---- RAY CASTING ---- */
-            let rays_count = 60;
+            let rays_count = 300;
             let fov = 60.0_f64.to_radians();
             let start_angle = self.player.angle - (fov / 2.0);
 
@@ -176,16 +183,30 @@ impl Engine {
                 let distance = ((ray_end_x - self.player.position.x).powi(2)
                     + (ray_end_y - self.player.position.y).powi(2))
                 .sqrt();
-                let ray_width = (Self::WIDTH as f64 / 2.0) / distance;
+
+                let wall_height = (Self::HEIGHT as f64 / distance) * 300.0;
+                let wall_width = Self::WIDTH as f64 / rays_count as f64;
+
+                let wall_x = i as f64 * wall_width;
+                let wall_top = (Self::HEIGHT as f64 - wall_height) / 2.0;
+
+                let shading = 1.0 - (distance / Self::WIDTH as f64);
+
+                rectangle(
+                    [shading as f32, shading as f32, shading as f32, 1.0],
+                    [wall_x, wall_top, wall_width, wall_height],
+                    c.transform,
+                    gl,
+                );
 
                 line(
-                    Self::RED,
-                    ray_width as f64,
+                    Self::GREEN,
+                    1.0,
                     [
-                        self.player.position.x,
-                        self.player.position.y,
-                        ray_end_x,
-                        ray_end_y,
+                        self.player.position.x * map_scale,
+                        self.player.position.y * map_scale,
+                        ray_end_x * map_scale,
+                        ray_end_y * map_scale,
                     ],
                     c.transform,
                     gl,
@@ -195,7 +216,8 @@ impl Engine {
     }
 
     pub fn update(&mut self, args: &UpdateArgs) {
-        let speed = 200.0;
+        let speed = Self::WIDTH as f64 / 2.0;
+        let angle_increment = 0.05;
 
         if self.key_states.w {
             self.player.position.x += f64::cos(self.player.angle) * speed * args.dt;
@@ -208,7 +230,7 @@ impl Engine {
         }
 
         if self.key_states.d {
-            self.player.angle += 0.03;
+            self.player.angle += angle_increment;
 
             if self.player.angle > 2.0 * PI {
                 self.player.angle -= 2.0 * PI;
@@ -219,7 +241,7 @@ impl Engine {
         }
 
         if self.key_states.a {
-            self.player.angle -= 0.03;
+            self.player.angle -= angle_increment;
 
             if self.player.angle < 0.0 {
                 self.player.angle += 2.0 * PI;
